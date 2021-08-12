@@ -584,6 +584,27 @@ BEGIN
       END LOOP;    
     END IF;
 
+    -- Add comments on columns.
+    FOR qry IN
+      SELECT 'COMMENT ON COLUMN '
+        || quote_ident(cs.relname)
+        || '.'
+        || quote_ident(a.attname)
+        || ' IS '
+        || quote_literal(d.description)
+      FROM pg_class cs
+          JOIN pg_namespace n ON (n.oid = cs.relnamespace)
+          JOIN pg_description d ON (d.objoid = cs.oid)
+          JOIN pg_attribute a ON (a.attrelid = cs.oid AND d.objsubid = a.attnum)
+      WHERE n.nspname = quote_ident(source_schema)
+    LOOP
+      IF ddl_only THEN
+        RAISE INFO '%', qry;
+      ELSE
+        EXECUTE qry;
+      END IF;
+    END LOOP;
+
     -- INCLUDING ALL creates new index names, we restore them to the old name.
     -- There should be no conflicts since they live in different schemas
     FOR ix_old_name, ix_new_name IN
@@ -735,6 +756,30 @@ BEGIN
   END LOOP;
   EXECUTE 'SET search_path = ' || quote_ident(source_schema) ;
   RAISE NOTICE '       FKEYS cloned: %', LPAD(cnt::text, 5, ' ');
+
+  -- Add comments on indexes.
+  FOR qry IN
+    SELECT 'COMMENT ON INDEX '
+      || quote_ident(dest_schema)
+      || '.'
+      || quote_ident(c.relname)
+      || ' IS '
+      || quote_literal(d.description)
+      || ';'
+    FROM pg_class c
+      JOIN pg_namespace n ON (n.oid = c.relnamespace)
+      JOIN pg_index i ON (i.indexrelid = c.oid)
+      JOIN pg_description d ON (d.objoid = c.oid)
+    WHERE
+      c.reltype = 0
+      AND n.nspname = quote_ident(source_schema)
+  LOOP
+    IF ddl_only THEN
+      RAISE INFO '%', qry;
+    ELSE
+      EXECUTE qry;
+    END IF;
+  END LOOP;
 
 -- Create views
   action := 'Views';
